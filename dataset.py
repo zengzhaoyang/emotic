@@ -32,7 +32,7 @@ class Emotic(Dataset):
         name = d[0]
         bbox = d[1]
         label = d[2]
-        img = Image.open('../data/emotic/' + name).convert('RGB')
+        img = Image.open('data/emotic/emotic/' + name).convert('RGB')
         img = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
         img = self.transforms(img)
         return img, label

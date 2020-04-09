@@ -21,6 +21,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import models.imagenet as customized_models
 
+import numpy as np
+
 from dataset import Emotic
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
@@ -119,7 +121,9 @@ def main():
     # Data loading code
     #traindir = os.path.join(args.data, 'train')
     #valdir = os.path.join(args.data, 'val')
-    traindir = args.data
+    traindir = args.data + '/train.txt'
+    valdir = args.data + '/val.txt'
+
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
@@ -135,15 +139,15 @@ def main():
         batch_size=args.train_batch, shuffle=True,
         num_workers=args.workers, pin_memory=True)
 
-    #val_loader = torch.utils.data.DataLoader(
-    #    datasets.ImageFolder(valdir, transforms.Compose([
-    #        transforms.Scale(256),
-    #        transforms.CenterCrop(224),
-    #        transforms.ToTensor(),
-    #        normalize,
-    #    ])),
-    #    batch_size=args.test_batch, shuffle=False,
-    #    num_workers=args.workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(
+        Emotic(valdir, transforms.Compose([
+            transforms.Scale(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])),
+        batch_size=args.test_batch, shuffle=False,
+        num_workers=args.workers, pin_memory=True)
 
 
     # create model
@@ -190,7 +194,7 @@ def main():
     else:
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
         #logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
-        logger.set_names(['Learning Rate', 'Train Loss'])
+        logger.set_names(['Learning Rate', 'Train Loss', 'Test Map'])
 
 
     if args.evaluate:
@@ -206,17 +210,20 @@ def main():
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
         train_loss = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
-        #test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
+        test_map = test(val_loader, model, criterion, epoch, use_cuda)
+        print('val', test_map)
+        test_map = np.mean(test_map)
+        print('map', test_map)
 
         # append logger file
         #logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
-        logger.append([state['lr'], train_loss])
+        logger.append([state['lr'], train_loss, test_map])
 
         # save model
         #is_best = test_acc > best_acc
         is_best = True
         #best_acc = max(test_acc, best_acc)
-        best_acc = 100
+        best_acc = max(test_map, best_acc)
         save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
@@ -291,52 +298,74 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    #losses = AverageMeter()
 
     # switch to evaluate mode
     model.eval()
 
     end = time.time()
     bar = Bar('Processing', max=len(val_loader))
+    res = []
+    gt = []
     for batch_idx, (inputs, targets) in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+            inputs= inputs.cuda()
+        #inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        outputs = torch.sigmoid(outputs)
+
+        res.append(outputs.detach().cpu().numpy())
+        gt.append(targets.detach().cpu().numpy())
+
+        #loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.data[0], inputs.size(0))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        #prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        #losses.update(loss.data[0], inputs.size(0))
+        #top1.update(prec1[0], inputs.size(0))
+        #top5.update(prec5[0], inputs.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
                     batch=batch_idx + 1,
                     size=len(val_loader),
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
                     )
         bar.next()
     bar.finish()
-    return (losses.avg, top1.avg)
+
+    res = np.concatenate(res, axis=0)
+    gt = np.concatenate(gt, axis=0)
+
+    tot = res.shape[0]
+    MAP = []
+
+    for i in range(26):
+        c = res[:, i]
+        g = gt[:, i]
+        order = np.argsort(-c)
+        ap = 0.
+        correct = 0.
+        for j in range(tot):
+            if g[order[j]] == 1:
+                correct += 1
+                ap += correct / (j+1)
+        ap /= tot
+        MAP.append(ap)
+
+    return MAP
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
