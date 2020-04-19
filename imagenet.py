@@ -121,14 +121,14 @@ def main():
     # Data loading code
     #traindir = os.path.join(args.data, 'train')
     #valdir = os.path.join(args.data, 'val')
-    traindir = args.data + '/train.txt'
-    valdir = args.data + '/val.txt'
+    traindir = args.data + '/annotations/train.txt'
+    valdir = args.data + '/annotations/val.txt'
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        Emotic(traindir, transforms.Compose([
+        Emotic(args.data + '/a.zip', traindir, transforms.Compose([
             #transforms.RandomSizedCrop(224),
             transforms.Scale(256),
             transforms.RandomCrop(224),
@@ -140,7 +140,7 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        Emotic(valdir, transforms.Compose([
+        Emotic(args.data + '/a.zip', valdir, transforms.Compose([
             transforms.Scale(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
@@ -154,7 +154,7 @@ def main():
     #if args.pretrained:
     print("=> using pre-trained model '{}'".format(args.arch))
     model = models.__dict__[args.arch](pretrained=True)
-    model.fc = nn.Linear(2048, 26)
+    model.fc = nn.Linear(2048, 29)
     #elif args.arch.startswith('resnext'):
     #    model = models.__dict__[args.arch](
     #                baseWidth=args.base_width,
@@ -245,7 +245,8 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
+    losses1 = AverageMeter()
+    losses2 = AverageMeter()
     #top1 = AverageMeter()
     #top5 = AverageMeter()
     end = time.time()
@@ -256,17 +257,24 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         data_time.update(time.time() - end)
 
         if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda(async=True)
+            inputs, targets = inputs.cuda(), targets.cuda(non_blocking=True)
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
-        outputs = torch.sigmoid(outputs)
-        loss = criterion(outputs, targets)
 
+        outputs_part1 = torch.sigmoid(outputs[:, :26])
+        outputs_part2 = outputs[:, 26:]
+        #outputs = torch.sigmoid(outputs)
+        loss1 = criterion(outputs_part1, targets[:, :26])
+        loss2 = ((outputs_part2 - targets[:, 26:]/10 + 0.5)**2).mean()
+
+        loss = loss1 + loss2
         # measure accuracy and record loss
         #prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.item(), inputs.size(0))
+        losses1.update(loss1.item(), inputs.size(0))
+        losses2.update(loss2.item(), inputs.size(0))
+
         #top1.update(prec1[0], inputs.size(0))
         #top5.update(prec5[0], inputs.size(0))
 
@@ -280,18 +288,17 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f}'.format(
+        bar.suffix  = '({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss1: {loss1:.4f} | Loss2: {loss2:.4f}'.format(
                     batch=batch_idx + 1,
                     size=len(train_loader),
-                    data=data_time.val,
-                    bt=batch_time.val,
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
-                    loss=losses.avg,
+                    loss1=losses1.avg,
+                    loss2=losses2.avg,
                     )
         bar.next()
     bar.finish()
-    return losses.avg
+    return losses1.avg
 
 def test(val_loader, model, criterion, epoch, use_cuda):
     global best_acc
@@ -314,9 +321,10 @@ def test(val_loader, model, criterion, epoch, use_cuda):
         if use_cuda:
             inputs= inputs.cuda()
         #inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+        targets = targets[:, :26]
 
         # compute output
-        outputs = model(inputs)
+        outputs = model(inputs)[:, :26]
         outputs = torch.sigmoid(outputs)
 
         res.append(outputs.detach().cpu().numpy())
@@ -362,7 +370,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
             if g[order[j]] == 1:
                 correct += 1
                 ap += correct / (j+1)
-        ap /= tot
+        ap /= correct
         MAP.append(ap)
 
     return MAP
