@@ -6,4 +6,4 @@ query=`curl -c ./cookie.txt -s -L "https://drive.google.com/uc?export=download&i
 url="https://drive.google.com$query"
 curl -b ./cookie.txt -L -o ${filename} $url
 
-wget http://sunai.uoc.edu/emotic/emotic_files/annotations.zip
+#wget http://sunai.uoc.edu/emotic/emotic_files/annotations.zip
