@@ -4,6 +4,9 @@ import numpy as np
 import zipfile
 from io import BytesIO
 import time
+import torch
+
+from skimage.color import rgb2lab
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -19,31 +22,35 @@ class ZipReader(object):
             self.id_context[self.fname] = file_handle
             return self.id_context[self.fname].read(image_name)
            
+class ToLAB(object):
 
-class Emotic(Dataset):
-    def __init__(self, fname, path, transforms):
-        super(Emotic, self).__init__()
-        f = open(path)
+    def __init__(self):
+        pass
+
+    def __call__(self, img):
+        rgb_image = np.array(img)
+        lab_image = rgb2lab(rgb_image)
+        l_image = (np.clip(lab_image[:, :, 0:1], 0.0, 100.0) + 0.0) / (100.0 + 0.0)
+        a_image = (np.clip(lab_image[:, :, 1:2], -86.0, 98.0) + 86.0) / (98.0  + 86.0)
+        b_image = (np.clip(lab_image[:, :, 2:3], -107.0, 94.0) + 107.0) / (94.0 + 107.0)
+        img = np.concatenate((l_image, a_image, b_image), axis=2).astype(np.float32)
+        tensor = torch.from_numpy(img)
+        tensor = tensor.permute(2, 0, 1)
+        return tensor
+
+
+class ImageNet(Dataset):
+    def __init__(self, zipname, annname, transforms):
+        super(ImageNet, self).__init__()
+        f = open(annname)
         self.data = []
         for line in f:
             tmp = line.strip().split()
-            if 'train' in path and tmp[-1] == 'nan':
-                continue
-            name = tmp[0]
-            xmin = int(float(tmp[1]))
-            ymin = int(float(tmp[2]))
-            xmax = int(float(tmp[3]))
-            ymax = int(float(tmp[4]))
-            bbox = [xmin, ymin, xmax, ymax]
-            labels = tmp[5:]
-            labels = [float(item) for item in labels]
-            labels = np.array(labels, dtype=np.float32)
-            self.data.append((name, bbox, labels))
+            self.data.append((tmp[0], int(tmp[1])))
 
         self.transforms = transforms
-
         #self.z = zipfile.ZipFile(fname, 'r')
-        self.z = ZipReader(fname)
+        self.z = ZipReader(zipname)
 
     def __len__(self):
         return len(self.data)
@@ -51,11 +58,16 @@ class Emotic(Dataset):
     def __getitem__(self, index):
         d = self.data[index]
         name = d[0]
-        bbox = d[1]
-        label = d[2]
-        bytes_img = self.z.read('emotic/' + name)
-        #img = Image.open('data/emotic/emotic/' + name).convert('RGB')
+        label = d[1]
+        bytes_img = self.z.read(name)
         img = Image.open(BytesIO(bytes_img)).convert('RGB')
-        img = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+
+        #rgb_image = np.array(img)
+        #lab_image = rgb2lab(rgb_image)
+        #l_image = (np.clip(lab_image[:, :, 0:1], 0.0, 100.0) + 0.0) / (100.0 + 0.0)
+        #a_image = (np.clip(lab_image[:, :, 1:2], -86.0, 98.0) + 86.0) / (98.0  + 86.0)
+        #b_image = (np.clip(lab_image[:, :, 2:3], -107.0, 94.0) + 107.0) / (94.0 + 107.0)
+        #img = np.concatenate((l_image, a_image, b_image), axis=2).astype(np.float32)
+
         img = self.transforms(img)
         return img, label

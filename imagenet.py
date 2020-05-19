@@ -21,26 +21,13 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import models.imagenet as customized_models
 
+from vgg import vgg19
+
 import numpy as np
 
-from dataset import Emotic
+from dataset import ImageNet, ToLAB
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
-
-# Models
-default_model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
-
-customized_models_names = sorted(name for name in customized_models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(customized_models.__dict__[name]))
-
-for name in customized_models.__dict__:
-    if name.islower() and not name.startswith("__") and callable(customized_models.__dict__[name]):
-        models.__dict__[name] = customized_models.__dict__[name]
-
-model_names = default_model_names + customized_models_names
 
 # Parse arguments
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -74,12 +61,6 @@ parser.add_argument('-c', '--checkpoint', default='checkpoint', type=str, metava
                     help='path to save checkpoint (default: checkpoint)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-# Architecture
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
 parser.add_argument('--depth', type=int, default=29, help='Model depth.')
 parser.add_argument('--cardinality', type=int, default=32, help='ResNet cardinality (group).')
 parser.add_argument('--base-width', type=int, default=4, help='ResNet base width.')
@@ -119,31 +100,26 @@ def main():
         mkdir_p(args.checkpoint)
 
     # Data loading code
-    #traindir = os.path.join(args.data, 'train')
-    #valdir = os.path.join(args.data, 'val')
-    traindir = args.data + '/annotations/train.txt'
-    valdir = args.data + '/annotations/val.txt'
-
-    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+    normalize = transforms.Normalize(mean=[49.5, 0.6, 8.1],
+                                     std=[1., 1., 1.])
 
     train_loader = torch.utils.data.DataLoader(
-        Emotic(args.data + '/a.zip', traindir, transforms.Compose([
-            #transforms.RandomSizedCrop(224),
-            transforms.Scale(256),
-            transforms.RandomCrop(224),
+        ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
+            transforms.RandomSizedCrop(224),
             transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
+            #transforms.ToTensor(),
+            ToLAB(),
             normalize,
         ])),
         batch_size=args.train_batch, shuffle=True,
         num_workers=args.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        Emotic(args.data + '/a.zip', valdir, transforms.Compose([
+        ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
             transforms.Scale(256),
             transforms.CenterCrop(224),
-            transforms.ToTensor(),
+            #transforms.ToTensor(),
+            ToLAB(),
             normalize,
         ])),
         batch_size=args.test_batch, shuffle=False,
@@ -152,34 +128,18 @@ def main():
 
     # create model
     #if args.pretrained:
-    print("=> using pre-trained model '{}'".format(args.arch))
-    model = models.__dict__[args.arch](pretrained=True)
-    model.fc = nn.Linear(2048, 29)
-    #elif args.arch.startswith('resnext'):
-    #    model = models.__dict__[args.arch](
-    #                baseWidth=args.base_width,
-    #                cardinality=args.cardinality,
-    #            )
-    #else:
-    #    print("=> creating model '{}'".format(args.arch))
-    #    model = models.__dict__[args.arch]()
-
-    #if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-    #    model.features = torch.nn.DataParallel(model.features)
-    #    model.cuda()
-    #else:
+    model = vgg19
     model = torch.nn.DataParallel(model).cuda()
 
     cudnn.benchmark = True
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 
     # define loss function (criterion) and optimizer
-    #criterion = nn.CrossEntropyLoss().cuda()
-    criterion = nn.BCELoss().cuda()
+    criterion = nn.CrossEntropyLoss().cuda()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Resume
-    title = 'ImageNet-' + args.arch
+    title = 'ImageNet-vgg'
     if args.resume:
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
@@ -193,8 +153,7 @@ def main():
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
     else:
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
-        #logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
-        logger.set_names(['Learning Rate', 'Train Loss', 'Test Map'])
+        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
 
 
     if args.evaluate:
@@ -209,28 +168,22 @@ def main():
 
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
-        test_map = test(val_loader, model, criterion, epoch, use_cuda)
-        print('val', test_map)
-        test_map = np.mean(test_map)
-        print('map', test_map)
+        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, use_cuda)
+        test_loss, test_acc = test(val_loader, model, criterion, epoch, use_cuda)
 
         # append logger file
-        #logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
-        logger.append([state['lr'], train_loss, test_map])
+        logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
 
         # save model
-        #is_best = test_acc > best_acc
-        is_best = True
-        #best_acc = max(test_acc, best_acc)
-        best_acc = max(test_map, best_acc)
+        is_best = test_acc > best_acc
+        best_acc = max(test_acc, best_acc)
         save_checkpoint({
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'acc': best_acc,
                 'best_acc': best_acc,
                 'optimizer' : optimizer.state_dict(),
-            }, is_best, checkpoint=args.checkpoint)
+            }, is_best, checkpoint=args.checkpoint, filename='epoch_%d.pth'%(epoch+1))
 
     logger.close()
     logger.plot()
@@ -245,10 +198,9 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses1 = AverageMeter()
-    losses2 = AverageMeter()
-    #top1 = AverageMeter()
-    #top5 = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
     end = time.time()
 
     bar = Bar('Processing', max=len(train_loader))
@@ -262,21 +214,14 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
 
         # compute output
         outputs = model(inputs)
+        loss = criterion(outputs, targets)
 
-        outputs_part1 = torch.sigmoid(outputs[:, :26])
-        outputs_part2 = outputs[:, 26:]
-        #outputs = torch.sigmoid(outputs)
-        loss1 = criterion(outputs_part1, targets[:, :26])
-        loss2 = ((outputs_part2 - targets[:, 26:]/10 + 0.5)**2).mean()
-
-        loss = loss1 + loss2
         # measure accuracy and record loss
-        #prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses1.update(loss1.item(), inputs.size(0))
-        losses2.update(loss2.item(), inputs.size(0))
+        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss.item(), inputs.size(0))
 
-        #top1.update(prec1[0], inputs.size(0))
-        #top5.update(prec5[0], inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -288,24 +233,27 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss1: {loss1:.4f} | Loss2: {loss2:.4f}'.format(
+        bar.suffix  = '({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Top1: {top1:.4f} | Top5: {top5:.4f}'.format(
                     batch=batch_idx + 1,
                     size=len(train_loader),
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
-                    loss1=losses1.avg,
-                    loss2=losses2.avg,
+                    loss=losses.avg,
+                    top1=top1.avg,
+                    top5=top5.avg
                     )
         bar.next()
     bar.finish()
-    return losses1.avg
+    return losses.avg, top1.avg
 
 def test(val_loader, model, criterion, epoch, use_cuda):
     global best_acc
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    #losses = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
 
     # switch to evaluate mode
     model.eval()
@@ -320,23 +268,18 @@ def test(val_loader, model, criterion, epoch, use_cuda):
 
         if use_cuda:
             inputs= inputs.cuda()
-        #inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
-        targets = targets[:, :26]
+            targets = targets.cuda()
 
         # compute output
-        outputs = model(inputs)[:, :26]
-        outputs = torch.sigmoid(outputs)
+        outputs = model(inputs)
 
-        res.append(outputs.detach().cpu().numpy())
-        gt.append(targets.detach().cpu().numpy())
-
-        #loss = criterion(outputs, targets)
+        loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
-        #prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        #losses.update(loss.data[0], inputs.size(0))
-        #top1.update(prec1[0], inputs.size(0))
-        #top5.update(prec5[0], inputs.size(0))
+        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss.data.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -354,26 +297,7 @@ def test(val_loader, model, criterion, epoch, use_cuda):
         bar.next()
     bar.finish()
 
-    res = np.concatenate(res, axis=0)
-    gt = np.concatenate(gt, axis=0)
-
-    tot = res.shape[0]
-    MAP = []
-
-    for i in range(26):
-        c = res[:, i]
-        g = gt[:, i]
-        order = np.argsort(-c)
-        ap = 0.
-        correct = 0.
-        for j in range(tot):
-            if g[order[j]] == 1:
-                correct += 1
-                ap += correct / (j+1)
-        ap /= correct
-        MAP.append(ap)
-
-    return MAP
+    return losses.avg, top1.avg
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
     filepath = os.path.join(checkpoint, filename)
