@@ -112,7 +112,7 @@ def main():
             normalize,
         ])),
         batch_size=args.train_batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True)
+        num_workers=args.workers, pin_memory=True, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
