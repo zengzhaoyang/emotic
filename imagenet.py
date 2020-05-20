@@ -249,6 +249,16 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
                     top1=top1.avg,
                     top5=top5.avg
                     )
+        print('({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Top1: {top1:.4f} | Top5: {top5:.4f}'.format(
+                    batch=batch_idx + 1,
+                    size=len(train_loader),
+                    total=bar.elapsed_td,
+                    eta=bar.eta_td,
+                    loss=losses.avg,
+                    top1=top1.avg,
+                    top5=top5.avg
+                    ))
+
         bar.next()
     bar.finish()
     return losses.avg, top1.avg
@@ -301,6 +311,15 @@ def test(val_loader, model, criterion, epoch, use_cuda):
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
                     )
+        print('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
+                    batch=batch_idx + 1,
+                    size=len(val_loader),
+                    data=data_time.avg,
+                    bt=batch_time.avg,
+                    total=bar.elapsed_td,
+                    eta=bar.eta_td,
+                    ))
+
         bar.next()
     bar.finish()
 
