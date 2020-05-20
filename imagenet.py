@@ -104,7 +104,7 @@ def main():
                                      std=[1., 1., 1.])
 
     train_loader = torch.utils.data.DataLoader(
-        ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
+        ImageNet(args.data + '/imagenet_train.zip', args.data + '/train.txt', transforms.Compose([
             transforms.RandomSizedCrop(224),
             transforms.RandomHorizontalFlip(),
             #transforms.ToTensor(),
@@ -130,6 +130,13 @@ def main():
     #if args.pretrained:
     model = vgg19
     model = torch.nn.DataParallel(model).cuda()
+
+    #ckpt = torch.load('pretrained/vgg.pth')
+    #ckpt2 = {}
+    #for key in ckpt:
+    #    ckpt2['module.' + key] = ckpt[key]
+    #del ckpt
+    #model.load_state_dict(ckpt2, strict=False)
 
     cudnn.benchmark = True
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
