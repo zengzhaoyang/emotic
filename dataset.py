@@ -22,22 +22,6 @@ class ZipReader(object):
             self.id_context[self.fname] = file_handle
             return self.id_context[self.fname].read(image_name)
            
-class ToLAB(object):
-
-    def __init__(self):
-        pass
-
-    def __call__(self, img):
-        rgb_image = np.array(img)
-        lab_image = rgb2lab(rgb_image)
-        l_image = (np.clip(lab_image[:, :, 0:1], 0.0, 100.0) + 0.0) / (100.0 + 0.0)
-        a_image = (np.clip(lab_image[:, :, 1:2], -86.0, 98.0) + 86.0) / (98.0  + 86.0)
-        b_image = (np.clip(lab_image[:, :, 2:3], -107.0, 94.0) + 107.0) / (94.0 + 107.0)
-        img = np.concatenate((l_image, a_image, b_image), axis=2).astype(np.float32)
-        tensor = torch.from_numpy(img)
-        tensor = tensor.permute(2, 0, 1)
-        return tensor
-
 
 class ImageNet(Dataset):
     def __init__(self, zipname, annname, transforms):
@@ -61,13 +45,6 @@ class ImageNet(Dataset):
         label = d[1]
         bytes_img = self.z.read(name)
         img = Image.open(BytesIO(bytes_img)).convert('RGB')
-
-        #rgb_image = np.array(img)
-        #lab_image = rgb2lab(rgb_image)
-        #l_image = (np.clip(lab_image[:, :, 0:1], 0.0, 100.0) + 0.0) / (100.0 + 0.0)
-        #a_image = (np.clip(lab_image[:, :, 1:2], -86.0, 98.0) + 86.0) / (98.0  + 86.0)
-        #b_image = (np.clip(lab_image[:, :, 2:3], -107.0, 94.0) + 107.0) / (94.0 + 107.0)
-        #img = np.concatenate((l_image, a_image, b_image), axis=2).astype(np.float32)
 
         img = self.transforms(img)
         return img, label

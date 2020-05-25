@@ -21,11 +21,11 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import models.imagenet as customized_models
 
-from vgg import vgg19
-
 import numpy as np
 
-from dataset import ImageNet, ToLAB
+from meta_model import *
+
+from dataset import ImageNet
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 
@@ -100,15 +100,13 @@ def main():
         mkdir_p(args.checkpoint)
 
     # Data loading code
-    normalize = transforms.Normalize(mean=[49.5, 0.6, 8.1],
-                                     std=[1., 1., 1.])
+    normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
         ImageNet(args.data + '/imagenet_train.zip', args.data + '/train.txt', transforms.Compose([
             transforms.RandomSizedCrop(224),
             transforms.RandomHorizontalFlip(),
-            #transforms.ToTensor(),
-            ToLAB(),
+            transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.train_batch, shuffle=True,
@@ -118,8 +116,7 @@ def main():
         ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
             transforms.Scale(256),
             transforms.CenterCrop(224),
-            #transforms.ToTensor(),
-            ToLAB(),
+            transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.test_batch, shuffle=False,
@@ -128,15 +125,8 @@ def main():
 
     # create model
     #if args.pretrained:
-    model = vgg19
+    model = resnet50(pretrained=False)
     model = torch.nn.DataParallel(model).cuda()
-
-    #ckpt = torch.load('pretrained/vgg.pth')
-    #ckpt2 = {}
-    #for key in ckpt:
-    #    ckpt2['module.' + key] = ckpt[key]
-    #del ckpt
-    #model.load_state_dict(ckpt2, strict=False)
 
     cudnn.benchmark = True
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
@@ -220,11 +210,11 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
         inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        scores, scores_naive = model(inputs)
+        loss = 1.5 * criterion(scores, targets) + 0.5 * criterion(scores_naive, targets)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        prec1, prec5 = accuracy(scores.data, targets.data, topk=(1, 5))
         losses.update(loss.item(), inputs.size(0))
 
         top1.update(prec1.item(), inputs.size(0))
@@ -288,7 +278,9 @@ def test(val_loader, model, criterion, epoch, use_cuda):
             targets = targets.cuda()
 
         # compute output
-        outputs = model(inputs)
+
+        with torch.no_grad():
+            outputs = model(inputs)
 
         loss = criterion(outputs, targets)
 
@@ -303,22 +295,27 @@ def test(val_loader, model, criterion, epoch, use_cuda):
         end = time.time()
 
         # plot progress
-        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
+        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | Top1: {top1:} | Top5: {top5:} | ETA: {eta:}'.format(
                     batch=batch_idx + 1,
                     size=len(val_loader),
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
+                    top1=top1.avg,
+                    top5=top5.avg,
                     eta=bar.eta_td,
                     )
-        print('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
+        print('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | Top1: {top1:} | Top5: {top5:} | ETA: {eta:}'.format(
                     batch=batch_idx + 1,
                     size=len(val_loader),
                     data=data_time.avg,
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
+                    top1=top1.avg,
+                    top5=top5.avg,
                     eta=bar.eta_td,
                     ))
+
 
         bar.next()
     bar.finish()
