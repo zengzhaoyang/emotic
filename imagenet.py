@@ -21,11 +21,10 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import models.imagenet as customized_models
 
-from vgg import vgg19
-
 import numpy as np
+from resnest import resnest101
 
-from dataset import ImageNet, ToLAB
+from dataset import ImageNet
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 
@@ -75,6 +74,9 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
 parser.add_argument('--gpu-id', default='0', type=str,
                     help='id(s) for CUDA_VISIBLE_DEVICES')
 
+parser.add_argument('--network', type=str, default='resnet50', help='network')
+parser.add_argument('--num-classes', type=int, default=1000, help='num classes')
+
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
 
@@ -100,26 +102,25 @@ def main():
         mkdir_p(args.checkpoint)
 
     # Data loading code
-    normalize = transforms.Normalize(mean=[49.5, 0.6, 8.1],
-                                     std=[1., 1., 1.])
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        ImageNet(args.data + '/imagenet_train.zip', args.data + '/train.txt', transforms.Compose([
+        ImageNet(args.data, 'train.txt', transforms.Compose([
             transforms.RandomSizedCrop(224),
             transforms.RandomHorizontalFlip(),
-            #transforms.ToTensor(),
-            ToLAB(),
+            transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.train_batch, shuffle=True,
         num_workers=args.workers, pin_memory=True, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
-        ImageNet(args.data + '/val.zip', args.data + '/val.txt', transforms.Compose([
+        ImageNet(args.data, 'val.txt', transforms.Compose([
             transforms.Scale(256),
             transforms.CenterCrop(224),
-            #transforms.ToTensor(),
-            ToLAB(),
+            transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.test_batch, shuffle=False,
@@ -128,15 +129,11 @@ def main():
 
     # create model
     #if args.pretrained:
-    model = vgg19
+    if args.network == 'resnest101':
+        model = resnest101(num_classes=args.num_classes)
+
     model = torch.nn.DataParallel(model).cuda()
 
-    #ckpt = torch.load('pretrained/vgg.pth')
-    #ckpt2 = {}
-    #for key in ckpt:
-    #    ckpt2['module.' + key] = ckpt[key]
-    #del ckpt
-    #model.load_state_dict(ckpt2, strict=False)
 
     cudnn.benchmark = True
     print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
@@ -146,7 +143,7 @@ def main():
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
     # Resume
-    title = 'ImageNet-vgg'
+    title = 'ImageNet-' + args.network
     if args.resume:
         # Load checkpoint.
         print('==> Resuming from checkpoint..')
