@@ -5,6 +5,7 @@ import zipfile
 from io import BytesIO
 import time
 import torch
+import os
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -29,23 +30,41 @@ class ZipReader(object):
          
 
 class ImageNet(Dataset):
-    def __init__(self, folder, annname, transforms):
+    def __init__(self, folder, imglist, transforms):
         super(ImageNet, self).__init__()
-        f = open(folder + '/' + annname)
-        self.z = ZipReader()
-        self.folder = folder
-        self.data = []
+
+        mapp = {}
+        folders = set()
+        f = open(folder + '/' + imglist)
         for line in f:
             tmp = line.strip().split()
             label = int(tmp[1])
-            namelist = self.z.namelist(folder + '/' + tmp[0])
-            for name in namelist:
-                if name.endswith('.JPEG'):
-                    self.data.append((tmp[0], name, label))
+            path = tmp[2]
+            path = path.split('/')[-1]
+            tmp_folder = path.split('_')[0] + '.zip'
+            folders.add(tmp_folder)
+            mapp[path] = label
+
+        #a = list(mapp.keys())
+        #print(a[:10])
+
+
+        self.z = ZipReader()
+        self.folder = folder
+        self.data = []
+
+        for tmp in folders:
+            if os.path.exists(folder + '/' + tmp):
+                namelist = self.z.namelist(folder + '/' + tmp)
+                #print(namelist[:10])
+                for name in namelist:
+                    fname = name.split('/')[-1]
+                    if name.endswith('.JPEG') and fname in mapp:
+                        self.data.append((tmp, name, mapp[fname]))
+
+        f.close()
 
         self.transforms = transforms
-
-        print(self.data[:10])
 
     def __len__(self):
         return len(self.data)
