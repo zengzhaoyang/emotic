@@ -148,6 +148,9 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
+    if os.path.exists(args.checkpoint + '/' + 'model_best.pth.tar'):
+        args.resume = args.checkpoint + '/' + 'model_best.pth.tar'
+
     # Resume
     title = 'ImageNet-' + args.network
     if args.resume:
