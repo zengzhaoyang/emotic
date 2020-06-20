@@ -98,8 +98,8 @@ def main():
     global best_acc
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
-    if not os.path.isdir(args.checkpoint):
-        mkdir_p(args.checkpoint)
+    #if not os.path.isdir(args.checkpoint):
+    #    mkdir_p(args.checkpoint)
 
     # Data loading code
 
