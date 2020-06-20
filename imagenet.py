@@ -131,6 +131,12 @@ def main():
     #if args.pretrained:
     if args.network == 'resnest101':
         model = resnest101(num_classes=args.num_classes)
+    elif args.network == 'resnet50':
+        model = models.resnet50(num_classes=args.num_classes)
+    elif args.network == 'resnet18':
+        model = models.resnet18(num_classes=args.num_classes)
+    elif args.network == 'resnet101':
+        model = models.resnet101(num_classes=args.num_classes)
 
     model = torch.nn.DataParallel(model).cuda()
 
@@ -179,7 +185,8 @@ def main():
         logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
 
         # save model
-        is_best = test_acc > best_acc
+        #is_best = test_acc > best_acc
+        is_best = True
         best_acc = max(test_acc, best_acc)
         save_checkpoint({
                 'epoch': epoch + 1,
