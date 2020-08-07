@@ -14,6 +14,23 @@ from splat import SplAtConv2d
 
 __all__ = ['ResNet', 'Bottleneck']
 
+class IBN(nn.Module):
+    def __init__(self, planes):
+        super(IBN, self).__init__()
+        half1 = int(planes / 2)
+        self.half = half1
+        half2 = planes - half1
+        self.IN = nn.InstanceNorm2d(half1, affine=True)
+        self.BN = nn.BatchNorm2d(half2)
+
+    def forward(self, x):
+        split = torch.split(x, self.half, 1)
+        out1 = self.IN(split[0].contiguous())
+        out2 = self.BN(split[1].contiguous())
+        out = torch.cat((out1, out2), 1)
+        return out
+
+
 class DropBlock2D(object):
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
@@ -35,11 +52,14 @@ class Bottleneck(nn.Module):
                  radix=1, cardinality=1, bottleneck_width=64,
                  avd=False, avd_first=False, dilation=1, is_first=False,
                  rectified_conv=False, rectify_avg=False,
-                 norm_layer=None, dropblock_prob=0.0, last_gamma=False):
+                 norm_layer=None, dropblock_prob=0.0, last_gamma=False, with_ibn=False):
         super(Bottleneck, self).__init__()
         group_width = int(planes * (bottleneck_width / 64.)) * cardinality
         self.conv1 = nn.Conv2d(inplanes, group_width, kernel_size=1, bias=False)
-        self.bn1 = norm_layer(group_width)
+        if with_ibn:
+            self.bn1 = IBN(group_width)
+        else:
+            self.bn1 = norm_layer(group_width)
         self.dropblock_prob = dropblock_prob
         self.radix = radix
         self.avd = avd and (stride > 1 or is_first)
@@ -157,7 +177,7 @@ class ResNet(nn.Module):
                  rectified_conv=False, rectify_avg=False,
                  avd=False, avd_first=False,
                  final_drop=0.0, dropblock_prob=0,
-                 last_gamma=False, norm_layer=nn.BatchNorm2d):
+                 last_gamma=False, norm_layer=nn.BatchNorm2d, with_ibn=False):
         self.cardinality = groups
         self.bottleneck_width = bottleneck_width
         # ResNet-D params
@@ -194,29 +214,29 @@ class ResNet(nn.Module):
         self.bn1 = norm_layer(self.inplanes)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0], norm_layer=norm_layer, is_first=False)
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, norm_layer=norm_layer)
+        self.layer1 = self._make_layer(block, 64, layers[0], norm_layer=norm_layer, is_first=False, with_ibn=with_ibn)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=2, norm_layer=norm_layer, with_ibn=with_ibn)
         if dilated or dilation == 4:
             self.layer3 = self._make_layer(block, 256, layers[2], stride=1,
                                            dilation=2, norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
             self.layer4 = self._make_layer(block, 512, layers[3], stride=1,
                                            dilation=4, norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
         elif dilation==2:
             self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
                                            dilation=1, norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
             self.layer4 = self._make_layer(block, 512, layers[3], stride=1,
                                            dilation=2, norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
         else:
             self.layer3 = self._make_layer(block, 256, layers[2], stride=2,
                                            norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
             self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                            norm_layer=norm_layer,
-                                           dropblock_prob=dropblock_prob)
+                                           dropblock_prob=dropblock_prob, with_ibn=with_ibn)
         self.avgpool = GlobalAvgPool2d()
         self.drop = nn.Dropout(final_drop) if final_drop > 0.0 else None
         self.fc = nn.Linear(512 * block.expansion, num_classes)
@@ -230,7 +250,7 @@ class ResNet(nn.Module):
                 m.bias.data.zero_()
 
     def _make_layer(self, block, planes, blocks, stride=1, dilation=1, norm_layer=None,
-                    dropblock_prob=0.0, is_first=True):
+                    dropblock_prob=0.0, is_first=True, with_ibn=False):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             down_layers = []
@@ -258,7 +278,7 @@ class ResNet(nn.Module):
                                 dilation=1, is_first=is_first, rectified_conv=self.rectified_conv,
                                 rectify_avg=self.rectify_avg,
                                 norm_layer=norm_layer, dropblock_prob=dropblock_prob,
-                                last_gamma=self.last_gamma))
+                                last_gamma=self.last_gamma, with_ibn=with_ibn))
         elif dilation == 4:
             layers.append(block(self.inplanes, planes, stride, downsample=downsample,
                                 radix=self.radix, cardinality=self.cardinality,
@@ -267,7 +287,7 @@ class ResNet(nn.Module):
                                 dilation=2, is_first=is_first, rectified_conv=self.rectified_conv,
                                 rectify_avg=self.rectify_avg,
                                 norm_layer=norm_layer, dropblock_prob=dropblock_prob,
-                                last_gamma=self.last_gamma))
+                                last_gamma=self.last_gamma, with_ibn=with_ibn))
         else:
             raise RuntimeError("=> unknown dilation size: {}".format(dilation))
 
@@ -280,7 +300,7 @@ class ResNet(nn.Module):
                                 dilation=dilation, rectified_conv=self.rectified_conv,
                                 rectify_avg=self.rectify_avg,
                                 norm_layer=norm_layer, dropblock_prob=dropblock_prob,
-                                last_gamma=self.last_gamma))
+                                last_gamma=self.last_gamma, with_ibn=with_ibn))
 
         return nn.Sequential(*layers)
 

@@ -44,7 +44,7 @@ def resnest101(pretrained=False, root='~/.encoding/models', **kwargs):
     model = ResNet(Bottleneck, [3, 4, 23, 3],
                    radix=2, groups=1, bottleneck_width=64,
                    deep_stem=True, stem_width=64, avg_down=True,
-                   avd=True, avd_first=False, **kwargs)
+                   avd=True, avd_first=False, with_ibn=True, **kwargs)
     if pretrained:
         model.load_state_dict(torch.hub.load_state_dict_from_url(
             resnest_model_urls['resnest101'], progress=True, check_hash=True))

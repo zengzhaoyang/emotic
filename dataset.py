@@ -30,7 +30,7 @@ class ZipReader(object):
          
 
 class ImageNet(Dataset):
-    def __init__(self, folder, imglist, transforms):
+    def __init__(self, folder, imglist, zipfile, transforms):
         super(ImageNet, self).__init__()
 
         mapp = {}
@@ -39,9 +39,10 @@ class ImageNet(Dataset):
         for line in f:
             tmp = line.strip().split()
             label = int(tmp[1])
-            path = tmp[2]
-            path = path.split('/')[-1]
-            tmp_folder = path.split('_')[0] + '.zip'
+            path = tmp[0]
+            #path = path.split('/')[-1]
+            #tmp_folder = path.split('_')[0] + '.zip'
+            tmp_folder = zipfile 
             folders.add(tmp_folder)
             mapp[path] = label
 
