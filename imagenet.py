@@ -107,7 +107,7 @@ def main():
                                      std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        ImageNet(args.data, 'val.txt', 'val.zip', transforms.Compose([
+        ImageNet(args.data, 'train.txt', 'imagenet_train.zip', transforms.Compose([
             transforms.RandomSizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
