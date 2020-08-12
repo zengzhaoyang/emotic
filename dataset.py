@@ -39,16 +39,10 @@ class ImageNet(Dataset):
         for line in f:
             tmp = line.strip().split()
             label = int(tmp[1])
-            path = tmp[0]
-            #path = path.split('/')[-1]
-            #tmp_folder = path.split('_')[0] + '.zip'
+            path = tmp[0].split('/')[-1]
             tmp_folder = zipfile 
             folders.add(tmp_folder)
             mapp[path] = label
-
-        #a = list(mapp.keys())
-        #print(a[:10])
-
 
         self.z = ZipReader()
         self.folder = folder
@@ -57,7 +51,6 @@ class ImageNet(Dataset):
         for tmp in folders:
             if os.path.exists(folder + '/' + tmp):
                 namelist = self.z.namelist(folder + '/' + tmp)
-                #print(namelist[:10])
                 for name in namelist:
                     fname = name.split('/')[-1]
                     if name.endswith('.JPEG') and fname in mapp:
