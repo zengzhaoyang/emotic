@@ -106,15 +106,15 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_loader = torch.utils.data.DataLoader(
-        ImageNet(args.data, 'train.txt', 'imagenet_train.zip', transforms.Compose([
-            transforms.RandomSizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            normalize,
-        ])),
-        batch_size=args.train_batch, shuffle=True,
-        num_workers=args.workers, pin_memory=True, drop_last=True)
+    #train_loader = torch.utils.data.DataLoader(
+    #    ImageNet(args.data, 'train.txt', 'imagenet_train.zip', transforms.Compose([
+    #        transforms.RandomSizedCrop(224),
+    #        transforms.RandomHorizontalFlip(),
+    #        transforms.ToTensor(),
+    #        normalize,
+    #    ])),
+    #    batch_size=args.train_batch, shuffle=True,
+    #    num_workers=args.workers, pin_memory=True, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         ImageNet(args.data,  'val.txt', 'val.zip', transforms.Compose([
@@ -163,7 +163,9 @@ def main():
         start_epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+        #logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title, resume=True)
+        logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
+        logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
     else:
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
         logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
@@ -198,6 +200,7 @@ def main():
                 'best_acc': best_acc,
                 'optimizer' : optimizer.state_dict(),
             }, is_best, checkpoint=args.checkpoint, filename='epoch_%d.pth'%(epoch+1))
+        print('\n', test_acc, '\n')
 
     logger.close()
     logger.plot()
@@ -256,15 +259,16 @@ def train(train_loader, model, criterion, optimizer, epoch, use_cuda):
                     top1=top1.avg,
                     top5=top5.avg
                     )
-        print('({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Top1: {top1:.4f} | Top5: {top5:.4f}'.format(
-                    batch=batch_idx + 1,
-                    size=len(train_loader),
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg
-                    ))
+        if batch_idx % 50 == 0:
+            print('({batch}/{size}) Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | Top1: {top1:.4f} | Top5: {top5:.4f}'.format(
+                        batch=batch_idx + 1,
+                        size=len(train_loader),
+                        total=bar.elapsed_td,
+                        eta=bar.eta_td,
+                        loss=losses.avg,
+                        top1=top1.avg,
+                        top5=top5.avg
+                        ))
 
         bar.next()
     bar.finish()
@@ -318,14 +322,15 @@ def test(val_loader, model, criterion, epoch, use_cuda):
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
                     )
-        print('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
-                    batch=batch_idx + 1,
-                    size=len(val_loader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    ))
+        if batch_idx % 50 == 0:
+            print('({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:}'.format(
+                        batch=batch_idx + 1,
+                        size=len(val_loader),
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        total=bar.elapsed_td,
+                        eta=bar.eta_td,
+                        ))
 
         bar.next()
     bar.finish()
