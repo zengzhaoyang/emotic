@@ -106,15 +106,15 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    #train_loader = torch.utils.data.DataLoader(
-    #    ImageNet(args.data, 'train.txt', 'imagenet_train.zip', transforms.Compose([
-    #        transforms.RandomSizedCrop(224),
-    #        transforms.RandomHorizontalFlip(),
-    #        transforms.ToTensor(),
-    #        normalize,
-    #    ])),
-    #    batch_size=args.train_batch, shuffle=True,
-    #    num_workers=args.workers, pin_memory=True, drop_last=True)
+    train_loader = torch.utils.data.DataLoader(
+        ImageNet(args.data, 'train.txt', 'imagenet_train.zip', transforms.Compose([
+            transforms.RandomSizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ])),
+        batch_size=args.train_batch, shuffle=True,
+        num_workers=args.workers, pin_memory=True, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         ImageNet(args.data,  'val.txt', 'val.zip', transforms.Compose([
